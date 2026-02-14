@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>App Mech Go - Mechanical Toolkit</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav>
+        <h1>App Mech Go</h1>
+        <ul>
+            <li onclick="showSection('home')">Home</li>
+            <li onclick="showSection('calculator')">Stress Calculator</li>
+            <li onclick="showSection('converter')">Unit Converter</li>
+        </ul>
+    </nav>
+
+    <!-- Home Section -->
+    <section id="home" class="active">
+        <h2>Welcome to App Mech Go</h2>
+        <p>Your Mechanical Engineering Toolkit</p>
+    </section>
+
+    <!-- Stress Calculator -->
+    <section id="calculator">
+        <h2>Stress Calculator</h2>
+
+        <label>Force (N):</label>
+        <input type="number" id="force">
+
+        <label>Area (m²):</label>
+        <input type="number" id="area">
+
+        <button onclick="calculateStress()">Calculate</button>
+
+        <h3 id="stressResult"></h3>
+    </section>
+
+    <!-- Unit Converter -->
+    <section id="converter">
+        <h2>Length Converter (mm to m)</h2>
+
+        <label>Millimeters:</label>
+        <input type="number" id="mm">
+
+        <button onclick="convertLength()">Convert</button>
+
+        <h3 id="convertResult"></h3>
+    </section>
+
+<script src="script.js"></script>
+</body>
+</html>
