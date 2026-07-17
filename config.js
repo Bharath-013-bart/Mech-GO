@@ -25,9 +25,11 @@ const twilioConfig = {
 };
 
 // Backend API Configuration
+// For local development: point to backend server on port 3000
+// For Vercel: use relative paths (empty baseURL)
+const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 const apiConfig = {
-  // Use a relative path so the app works on Vercel and locally.
-  baseURL: "",
+  baseURL: isLocalhost && window.location.port === "5501" ? "http://localhost:3000" : "",
   endpoints: {
     sendOTP: "/api/send-otp",
     verifyOTP: "/api/verify-otp"
