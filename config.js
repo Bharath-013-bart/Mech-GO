@@ -26,12 +26,8 @@ const twilioConfig = {
 
 // Backend API Configuration
 const apiConfig = {
-  // Base URL for backend API endpoints
-  // For development: http://localhost:3000
-  // For production: https://your-backend-domain.com
-  baseURL: twilioConfig.smsEndpoint,
-  
-  // API endpoints
+  // Use a relative path so the app works on Vercel and locally.
+  baseURL: "",
   endpoints: {
     sendOTP: "/api/send-otp",
     verifyOTP: "/api/verify-otp"

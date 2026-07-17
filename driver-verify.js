@@ -21,9 +21,9 @@ function waitForFirebase() {
 }
 
 // Use API configuration from config.js
-const API_BASE = apiConfig?.baseURL || "http://localhost:3000";
-const OTP_API_SEND = `${API_BASE}/api/send-otp`;
-const OTP_API_VERIFY = `${API_BASE}/api/verify-otp`;
+const API_BASE = apiConfig?.baseURL || "";
+const OTP_API_SEND = `${API_BASE}${apiConfig?.endpoints?.sendOTP || '/api/send-otp'}`;
+const OTP_API_VERIFY = `${API_BASE}${apiConfig?.endpoints?.verifyOTP || '/api/verify-otp'}`;
 let demoOTP = null;
 
 async function sendBackendOTP(phone) {
