@@ -33,6 +33,7 @@ const profileBtn = qs("profileBtn");
 const toggleOnline = qs("toggleOnline");
 const statusBadge = qs("statusBadge");
 const fuelFilter = qs("fuelFilter");
+const driverPincode = qs("driverPincode");
 const availableOrdersList = qs("availableOrdersList");
 
 const activeOrderDetails = qs("activeOrderDetails");
@@ -254,29 +255,32 @@ async function renderAvailableOrders() {
   }
 }
 
-async function acceptOrder(orderId) {
+function acceptOrder(orderId) {
   try {
-    const currentUser = firebase.auth().currentUser;
-    if (!currentUser) {
+    if (!session) {
       alert("Please sign in first");
       return;
     }
-    
-    // Get current driver's profile for their name
-    const driverProfile = await getDriverProfile(currentUser.uid);
-    const driverName = driverProfile?.name || currentUser.phoneNumber || "Driver";
-    
-    // Update order in Firestore
-    await updateOrder(orderId, {
+
+    const driverName = session.username || session.phone || "Driver";
+    const orderIndex = orders.findIndex(o => o.id.toString() === orderId.toString());
+    if (orderIndex === -1) {
+      alert("Order not found.");
+      return;
+    }
+
+    orders[orderIndex] = {
+      ...orders[orderIndex],
       status: "accepted",
-      acceptedBy: currentUser.uid,
+      acceptedBy: session.phone || driverName,
       acceptedByName: driverName,
       acceptedAt: new Date().toISOString()
-    });
-    
+    };
+    saveOrders(orders);
+
     currentOrderId = orderId;
     activeBtn.click();
-    
+    renderAvailableOrders();
     alert(`✅ Order accepted!`);
   } catch (error) {
     console.error("Error accepting order:", error);
@@ -284,20 +288,17 @@ async function acceptOrder(orderId) {
   }
 }
 
-async function renderActiveOrder() {
+function renderActiveOrder() {
   try {
-    const currentUser = firebase.auth().currentUser;
-    if (!currentUser) {
+    if (!session) {
       activeOrderDetails.innerHTML = '<div class="empty-state">Please sign in to view your active order.</div>';
+      locationMap.innerHTML = '<p>📍 Customer location will appear here</p>';
       return;
     }
-    
-    // Get all orders
-    const allOrders = await getOrders();
-    
-    // Find active order accepted by current driver
-    const active = allOrders.find(o => 
-      o.acceptedBy === currentUser.uid && 
+
+    const driverId = session.phone || session.username;
+    const active = orders.find(o => 
+      o.acceptedBy === driverId &&
       !["completed", "cancelled"].includes(o.status)
     );
     
@@ -425,7 +426,8 @@ function updateStats() {
   if (acceptanceRate) acceptanceRate.textContent = driverStats.acceptanceRate;
   
   if (earningsBreakdown) {
-    const completed = orders.filter(o => o.acceptedBy === session.username && o.status === "completed");
+    const driverId = session.phone || session.username;
+  const completed = orders.filter(o => o.acceptedBy === driverId && o.status === "completed");
     if (completed.length === 0) {
       earningsBreakdown.innerHTML = '<div class="empty-state">No completed orders yet. Start accepting orders to track earnings.</div>';
       return;

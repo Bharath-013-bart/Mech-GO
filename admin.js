@@ -33,13 +33,14 @@ const approvedMechanicsSection = qs("approvedMechanicsSection");
 // Check admin access
 function initAdmin() {
   if (!adminSession) {
-    // Simple admin access - just for demo
-    const password = prompt("Enter admin password (demo: admin123):");
-    if (password === "admin123") {
-      adminSession = { role: "admin", loginTime: new Date().toISOString() };
+    const username = prompt("Enter admin username:");
+    const password = prompt("Enter admin password:");
+
+    if (username === "admin" && password === "admin123") {
+      adminSession = { username, role: "admin", loginTime: new Date().toISOString() };
       saveSession("admin", adminSession);
     } else {
-      alert("❌ Invalid password");
+      alert("❌ Invalid admin credentials");
       navigateTo("index.html");
     }
   }

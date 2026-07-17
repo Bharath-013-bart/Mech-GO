@@ -22,6 +22,54 @@ function waitForFirebase() {
 
 // Use API configuration from config.js
 const API_BASE = apiConfig?.baseURL || "http://localhost:3000";
+const OTP_API_SEND = `${API_BASE}/api/send-otp`;
+const OTP_API_VERIFY = `${API_BASE}/api/verify-otp`;
+let demoOTP = null;
+
+async function sendBackendOTP(phone) {
+  const response = await fetch(OTP_API_SEND, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phoneNumber: phone })
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to send OTP');
+  }
+
+  if (data.demoOTP) {
+    demoOTP = data.demoOTP;
+    console.log(`Demo OTP for ${phone}: ${data.demoOTP}`);
+  }
+
+  return data;
+}
+
+async function verifyBackendOTP(phone, otp) {
+  const response = await fetch(OTP_API_VERIFY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phoneNumber: phone, otp })
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'OTP verification failed');
+  }
+
+  return data;
+}
+
+async function ensureAnonymousAuth() {
+  if (!firebase || !firebase.auth) {
+    throw new Error('Firebase Auth not available');
+  }
+  const user = firebase.auth().currentUser;
+  if (user) return user;
+  const credential = await firebase.auth().signInAnonymously();
+  return credential.user;
+}
 
 const phoneForm = qs("phoneForm");
 const phoneInput = qs("phoneInput");
@@ -91,20 +139,17 @@ phoneForm?.addEventListener("submit", async (e) => {
   try {
     await waitForFirebase();
     
-    if (typeof firebase === 'undefined' || !firebase.auth) {
-      throw new Error("Firebase is not loaded. Please refresh the page.");
-    }
-    
     phoneForm.disabled = true;
     currentPhone = phone;
     otpPhone.textContent = `OTP will be sent to ${phone}`;
     
-    // Send OTP via Firebase Phone Auth
-    const appVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container');
-    confirmationResult = await firebase.auth().signInWithPhoneNumber(phone, appVerifier);
+    await sendBackendOTP(phone);
     
     showStep("otp");
     otpInput.focus();
+    if (demoOTP) {
+      console.log(`Demo OTP: ${demoOTP}`);
+    }
   } catch (error) {
     console.error("Phone verification error:", error);
     alert("❌ Error: " + error.message);
@@ -126,24 +171,29 @@ otpForm?.addEventListener("submit", async (e) => {
     await waitForFirebase();
     
     otpForm.disabled = true;
-    
-    if (!confirmationResult) {
-      alert("❌ Please start phone verification again");
-      return;
+    await verifyBackendOTP(currentPhone, enteredOTP);
+
+    let user = findUserByPhone("mechanic", currentPhone);
+    if (!user) {
+      user = {
+        id: Date.now(),
+        phone: currentPhone,
+        createdAt: new Date().toISOString(),
+        verified: false,
+        verifiedAt: null,
+        documents: [],
+        experience: null,
+        specializations: [],
+        bankAccount: ""
+      };
+      const users = getUserDB("mechanic");
+      users.push(user);
+      saveUserDB("mechanic", users);
     }
-    
-    // Verify OTP and sign in
-    const userCredential = await confirmationResult.confirm(enteredOTP);
-    const user = userCredential.user;
-    
-    // Create mechanic document in Firestore
-    await firebase.firestore().collection("mechanics").doc(user.uid).set({
-      uid: user.uid,
-      phone: currentPhone,
-      createdAt: new Date(),
-      verified: false
-    }, { merge: true });
-    
+
+    currentUser = user;
+    saveSession("mechanic", { username: currentPhone, phone: currentPhone, userId: user.id });
+
     showStep("documents");
     documentForm.reset();
     alert("✅ Phone verified! Now upload your documents.");
@@ -160,14 +210,11 @@ resendOtpBtn?.addEventListener("click", async (e) => {
   e.preventDefault();
   
   try {
-    await waitForFirebase();
-    
-    if (!currentPhone || !confirmationResult) {
+    if (!currentPhone) {
       alert("❌ Please start phone verification again");
       return;
     }
-    
-    // Resend uses the same confirmationResult
+    await sendBackendOTP(currentPhone);
     alert("✅ OTP resent to " + currentPhone);
   } catch (error) {
     console.error("Resend OTP error:", error);
@@ -230,49 +277,46 @@ documentForm?.addEventListener("submit", async (e) => {
   }
   
   try {
-    await waitForFirebase();
-    
     documentForm.disabled = true;
-    const user = firebase.auth().currentUser;
-    
+
+    let user = currentUser;
+    if (!user) {
+      const session = loadSession("mechanic");
+      user = session ? findUserByPhone("mechanic", session.phone) : null;
+    }
+
     if (!user) {
       alert("❌ Please verify your phone first");
       documentForm.disabled = false;
       return;
     }
-    
-    // Upload files to Firebase Cloud Storage
-    const storage = firebase.storage();
+
     const documents = [];
     const files = [
       { file: idFile.files[0], name: "id-proof" },
       { file: certFile.files[0], name: "certificate" },
       { file: selfieFile.files[0], name: "selfie" }
     ];
-    
+
     for (const { file, name } of files) {
-      const fileName = `mechanics/${user.uid}/${name}-${Date.now()}`;
-      const ref = storage.ref(fileName);
-      await ref.put(file);
-      const url = await ref.getDownloadURL();
-      
       documents.push({
         name: file.name,
-        url,
         type: name,
         uploadedAt: new Date().toISOString()
       });
     }
-    
-    // Update mechanic profile in Firestore
-    await firebase.firestore().collection("mechanics").doc(user.uid).update({
-      documents,
-      experience: Number(experience.value),
-      specializations: specializations.value.split(",").map(s => s.trim()),
-      bankAccount: bankAccount.value,
-      verified: false
-    });
-    
+
+    const users = getUserDB("mechanic");
+    const storedUser = users.find(u => u.phone === user.phone);
+    if (storedUser) {
+      storedUser.documents = documents;
+      storedUser.experience = Number(experience.value);
+      storedUser.specializations = specializations.value.split(",").map(s => s.trim());
+      storedUser.bankAccount = bankAccount.value;
+      storedUser.verified = false;
+      saveUserDB("mechanic", users);
+    }
+
     showStep("pendingApproval");
     alert("✅ Documents submitted! Admin will review within 24 hours.");
   } catch (error) {

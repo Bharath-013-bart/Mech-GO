@@ -32,6 +32,7 @@ const profileBtn = qs("profileBtn");
 const toggleOnline = qs("toggleOnline");
 const statusBadge = qs("statusBadge");
 const issueFilter = qs("issueFilter");
+const mechanicPincode = qs("mechanicPincode");
 const availableRequestsList = qs("availableRequestsList");
 
 const activeJobDetails = qs("activeJobDetails");
@@ -262,10 +263,11 @@ toggleOnline?.addEventListener("click", () => {
   }
 });
 
+mechanicPincode?.addEventListener("input", renderAvailableRequests);
 issueFilter?.addEventListener("change", renderAvailableRequests);
 
 // Available requests
-async function renderAvailableRequests() {
+function renderAvailableRequests() {
   if (!availableRequestsList) return;
   
   if (!isOnline) {
@@ -274,11 +276,13 @@ async function renderAvailableRequests() {
   }
   
   try {
-    const availableRequests = await getAvailableMechanicRequests();
-    const filter = issueFilter.value;
+    const filter = issueFilter?.value || "";
+    const pincode = mechanicPincode?.value.trim();
     
-    const available = availableRequests.filter(r => 
-      !filter || r.problemType === filter
+    const available = mechanicRequests.filter(r => 
+      r.status === "waiting" &&
+      (!filter || r.problemType === filter) &&
+      (!pincode || r.pincode === pincode)
     );
     
     if (available.length === 0) {
@@ -305,26 +309,32 @@ async function renderAvailableRequests() {
   }
 }
 
-async function acceptJob(jobId) {
+function acceptJob(jobId) {
   try {
-    const currentUser = firebase.auth().currentUser;
-    if (!currentUser) {
+    if (!session) {
       alert("Please sign in first");
       return;
     }
-    
-    const mechanicProfile = await getMechanicProfile(currentUser.uid);
-    const mechanicName = mechanicProfile?.name || currentUser.phoneNumber || "Mechanic";
-    
-    await acceptMechanicRequest(jobId, {
-      mechanicId: currentUser.uid,
-      mechanicName: mechanicName,
+
+    const mechanicName = session.username || session.phone || "Mechanic";
+    const requestIndex = mechanicRequests.findIndex(r => r.id.toString() === jobId.toString());
+    if (requestIndex === -1) {
+      alert("Request not found.");
+      return;
+    }
+
+    mechanicRequests[requestIndex] = {
+      ...mechanicRequests[requestIndex],
+      status: "accepted",
+      acceptedBy: session.phone || mechanicName,
+      acceptedByName: mechanicName,
       acceptedAt: new Date().toISOString()
-    });
-    
+    };
+    saveMechanicRequests(mechanicRequests);
+
     currentJobId = jobId;
     activeBtn.click();
-    
+    renderAvailableRequests();
     alert(`✅ Job accepted!`);
   } catch (error) {
     console.error("Error accepting job:", error);
@@ -333,7 +343,8 @@ async function acceptJob(jobId) {
 }
 
 function renderActiveJob() {
-  const active = mechanicRequests.find(r => r.acceptedBy === session.username && r.status !== "completed");
+  const userId = session.phone || session.username;
+  const active = mechanicRequests.find(r => r.acceptedBy === userId && r.status !== "completed");
   
   if (!active) {
     activeJobDetails.innerHTML = '<div class="empty-state">No active job. Accept one from available requests to start.</div>';
@@ -524,9 +535,9 @@ function updateStats() {
 
 // Profile
 function renderProfile() {
-  if (profileName) profileName.textContent = session.username;
+  if (profileName) profileName.textContent = session.username || session.phone;
   if (profilePhone) profilePhone.textContent = session.phone;
-  if (profileSpecializations) profileSpecializations.textContent = session.specializations.join(", ");
+  if (profileSpecializations) profileSpecializations.textContent = (session.specializations || []).join(", ");
   if (profileSince) profileSince.textContent = formatDate(new Date(session.joinedDate));
   if (profileJobs) profileJobs.textContent = mechanicStats.completedJobs;
 }

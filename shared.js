@@ -3,14 +3,21 @@ const STORAGE_KEYS = {
   CUSTOMER_SESSION: "mechgo_customer_session",
   DRIVER_SESSION: "mechgo_driver_session",
   MECHANIC_SESSION: "mechgo_mechanic_session",
+  ADMIN_SESSION: "mechgo_admin_session",
   ORDERS: "mechgo_orders",
   MECHANIC_REQUESTS: "mechgo_mechanic_requests",
   CHAT_MESSAGES: "mechgo_chat_messages",
   CUSTOMERS: "mechgo_customers_db",
   DRIVERS: "mechgo_drivers_db",
   MECHANICS: "mechgo_mechanics_db",
-  ADMIN_SESSION: "mechgo_admin_session",
 };
+
+function getSessionStorageKey(role) {
+  return role === "customer" ? STORAGE_KEYS.CUSTOMER_SESSION :
+         role === "driver" ? STORAGE_KEYS.DRIVER_SESSION :
+         role === "mechanic" ? STORAGE_KEYS.MECHANIC_SESSION :
+         role === "admin" ? STORAGE_KEYS.ADMIN_SESSION : null;
+}
 
 // Utility functions
 function qs(id) {
@@ -48,23 +55,20 @@ function formatDate(date = new Date()) {
 
 // Session management
 function saveSession(role, sessionData) {
-  const key = role === "customer" ? STORAGE_KEYS.CUSTOMER_SESSION :
-              role === "driver" ? STORAGE_KEYS.DRIVER_SESSION :
-              STORAGE_KEYS.MECHANIC_SESSION;
+  const key = getSessionStorageKey(role);
+  if (!key) return;
   saveStorage(key, sessionData);
 }
 
 function loadSession(role) {
-  const key = role === "customer" ? STORAGE_KEYS.CUSTOMER_SESSION :
-              role === "driver" ? STORAGE_KEYS.DRIVER_SESSION :
-              STORAGE_KEYS.MECHANIC_SESSION;
+  const key = getSessionStorageKey(role);
+  if (!key) return null;
   return loadStorage(key, null);
 }
 
 function clearSession(role) {
-  const key = role === "customer" ? STORAGE_KEYS.CUSTOMER_SESSION :
-              role === "driver" ? STORAGE_KEYS.DRIVER_SESSION :
-              STORAGE_KEYS.MECHANIC_SESSION;
+  const key = getSessionStorageKey(role);
+  if (!key) return;
   localStorage.removeItem(key);
 }
 

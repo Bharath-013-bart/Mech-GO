@@ -20,6 +20,57 @@ function waitForFirebase() {
   });
 }
 
+// Use API configuration from config.js
+const API_BASE = apiConfig?.baseURL || "http://localhost:3000";
+const OTP_API_SEND = `${API_BASE}/api/send-otp`;
+const OTP_API_VERIFY = `${API_BASE}/api/verify-otp`;
+let demoOTP = null;
+
+async function sendBackendOTP(phone) {
+  const response = await fetch(OTP_API_SEND, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phoneNumber: phone })
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to send OTP');
+  }
+
+  if (data.demoOTP) {
+    demoOTP = data.demoOTP;
+    console.log(`Demo OTP for ${phone}: ${data.demoOTP}`);
+  }
+
+  return data;
+}
+
+async function verifyBackendOTP(phone, otp) {
+  const response = await fetch(OTP_API_VERIFY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phoneNumber: phone, otp })
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'OTP verification failed');
+  }
+
+  return data;
+}
+
+async function ensureAnonymousAuth() {
+  if (!firebase || !firebase.auth) {
+    throw new Error('Firebase Auth not available');
+  }
+  const user = firebase.auth().currentUser;
+  if (user) return user;
+  const credential = await firebase.auth().signInAnonymously();
+  return credential.user;
+}
+
 const phoneForm = qs("phoneForm");
 const phoneInput = qs("phoneInput");
 const phoneVerificationStep = qs("phoneVerificationStep");
@@ -77,13 +128,10 @@ function showStep(step) {
   else if (step === "alreadyVerified") alreadyVerifiedStep?.classList.remove("hidden");
 }
 
-// Step 1: Phone Verification with Firebase Auth
+// Step 1: Phone Verification with backend OTP
 phoneForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  console.log("📱 Phone form submitted");
-  
   const phone = phoneInput.value.trim();
-  console.log("Phone input:", phone);
   
   if (!phone) {
     alert("Please enter a phone number");
@@ -91,34 +139,19 @@ phoneForm?.addEventListener("submit", async (e) => {
   }
   
   try {
-    console.log("⏳ Waiting for Firebase...");
-    // Wait for Firebase to load
     await waitForFirebase();
-    console.log("✅ Firebase loaded");
-    
-    if (typeof firebase === 'undefined' || !firebase.auth) {
-      throw new Error("Firebase is not loaded. Please refresh the page.");
-    }
     
     phoneForm.disabled = true;
     currentPhone = phone;
     otpPhone.textContent = `OTP sent to ${phone}`;
     
-    console.log("🔐 Creating reCAPTCHA verifier...");
-    // Send OTP via Firebase Phone Auth
-    const appVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-      'size': 'invisible',
-      'callback': (response) => {
-        console.log("reCAPTCHA verified:", response);
-      }
-    });
-    
-    console.log("📲 Sending OTP to:", phone);
-    confirmationResult = await firebase.auth().signInWithPhoneNumber(phone, appVerifier);
-    console.log("✅ OTP sent successfully");
+    await sendBackendOTP(phone);
     
     showStep("otp");
     otpInput.focus();
+    if (demoOTP) {
+      console.log(`Demo OTP: ${demoOTP}`);
+    }
   } catch (error) {
     console.error("❌ Phone verification error:", error);
     alert("Error sending OTP: " + error.message);
@@ -126,7 +159,7 @@ phoneForm?.addEventListener("submit", async (e) => {
   }
 });
 
-// Step 2: OTP Verification with Firebase
+// Step 2: OTP Verification with backend
 otpForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const enteredOTP = otpInput.value.trim();
@@ -140,26 +173,27 @@ otpForm?.addEventListener("submit", async (e) => {
     await waitForFirebase();
     
     otpForm.disabled = true;
-    
-    if (!confirmationResult) {
-      alert("Please start phone verification again");
-      return;
+    await verifyBackendOTP(currentPhone, enteredOTP);
+
+    let user = findUserByPhone("driver", currentPhone);
+    if (!user) {
+      user = {
+        id: Date.now(),
+        phone: currentPhone,
+        createdAt: new Date().toISOString(),
+        verified: false,
+        verifiedAt: null,
+        documents: [],
+        bankAccount: ""
+      };
+      const users = getUserDB("driver");
+      users.push(user);
+      saveUserDB("driver", users);
     }
-    
-    // Verify OTP and sign in
-    const userCredential = await confirmationResult.confirm(enteredOTP);
-    const user = userCredential.user;
-    
-    // Create driver document in Firestore
-    await firebase.firestore().collection("drivers").doc(user.uid).set({
-      uid: user.uid,
-      phone: currentPhone,
-      verified: false,
-      createdAt: new Date(),
-      documents: [],
-      bankAccount: ""
-    }, { merge: true });
-    
+
+    currentUser = user;
+    saveSession("driver", { username: currentPhone, phone: currentPhone, userId: user.id });
+
     // OTP verified - proceed to documents
     showStep("documents");
     documentForm.reset();
@@ -173,8 +207,11 @@ otpForm?.addEventListener("submit", async (e) => {
 resendOtpBtn?.addEventListener("click", async (e) => {
   e.preventDefault();
   try {
-    const appVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container');
-    confirmationResult = await firebase.auth().signInWithPhoneNumber(currentPhone, appVerifier);
+    if (!currentPhone) {
+      alert("Please start phone verification again");
+      return;
+    }
+    await sendBackendOTP(currentPhone);
     alert("OTP resent!");
     otpInput.value = "";
     otpInput.focus();
@@ -228,20 +265,20 @@ documentForm?.addEventListener("submit", async (e) => {
   }
   
   try {
-    await waitForFirebase();
-    
     documentForm.disabled = true;
-    const user = firebase.auth().currentUser;
-    
+    let user = currentUser;
+    if (!user) {
+      const session = loadSession("driver");
+      user = session ? findUserByPhone("driver", session.phone) : null;
+    }
+
     if (!user) {
       alert("User not authenticated. Please start over.");
+      documentForm.disabled = false;
       return;
     }
-    
-    // Upload files to Firebase Cloud Storage
-    const storage = firebase.storage();
+
     const documents = [];
-    
     const files = [
       { file: licenseFile.files[0], type: "license" },
       { file: registrationFile.files[0], type: "registration" },
@@ -249,26 +286,23 @@ documentForm?.addEventListener("submit", async (e) => {
     ];
     
     for (const { file, type } of files) {
-      const ref = storage.ref(`drivers/${user.uid}/${type}/${file.name}`);
-      await ref.put(file);
-      const url = await ref.getDownloadURL();
-      
       documents.push({
         type: type,
-        url: url,
         fileName: file.name,
         uploadedAt: new Date().toISOString()
       });
     }
-    
-    // Update driver in Firestore with documents and bank account
-    await firebase.firestore().collection("drivers").doc(user.uid).update({
-      documents: documents,
-      bankAccount: bankAccount.value.trim(),
-      verifiedAt: null,
-      statusMessage: "Pending admin review"
-    });
-    
+
+    const users = getUserDB("driver");
+    const storedUser = users.find(u => u.phone === user.phone);
+    if (storedUser) {
+      storedUser.documents = documents;
+      storedUser.bankAccount = bankAccount.value.trim();
+      storedUser.verifiedAt = null;
+      storedUser.statusMessage = "Pending admin review";
+      saveUserDB("driver", users);
+    }
+
     showStep("pendingApproval");
   } catch (error) {
     console.error("Document upload error:", error);

@@ -6,12 +6,19 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const twilio = require('twilio');
 const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(express.static(path.join(__dirname)));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Initialize Twilio
 const twilioClient = twilio(
@@ -21,15 +28,37 @@ const twilioClient = twilio(
 
 // Initialize Firebase Admin (optional - use if you have service account JSON)
 // For demo: Firebase will be accessed from frontend
-// For production: Uncomment and configure
-/*
-admin.initializeApp({
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  clientEmail: process.env.FIREBASE_CLIENT_EMAIL
-});
-const db = admin.firestore();
-*/
+const firebaseServiceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID;
+const firebasePrivateKey = process.env.FIREBASE_PRIVATE_KEY;
+const firebaseClientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+
+let db;
+try {
+  if (firebaseServiceAccountPath) {
+    const serviceAccount = JSON.parse(
+      fs.readFileSync(path.resolve(firebaseServiceAccountPath), 'utf8')
+    );
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    db = admin.firestore();
+    console.log(`Firebase Admin initialized from service account: ${firebaseServiceAccountPath}`);
+  } else if (firebaseProjectId && firebasePrivateKey && firebaseClientEmail) {
+    admin.initializeApp({
+      projectId: firebaseProjectId,
+      privateKey: firebasePrivateKey.replace(/\\n/g, '\n'),
+      clientEmail: firebaseClientEmail
+    });
+    db = admin.firestore();
+    console.log('Firebase Admin initialized from environment variables');
+  } else {
+    console.log('Firebase Admin not initialized: missing Firebase configuration');
+  }
+} catch (err) {
+  console.error('Firebase initialization failed:', err.message);
+}
 
 // ========== ENDPOINTS ==========
 

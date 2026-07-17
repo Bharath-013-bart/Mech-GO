@@ -1,9 +1,5 @@
 // MECH-GO Customer Dashboard
-// Check if user is authenticated
-if (!hasActiveSession("customer")) {
-  navigateTo("index.html");
-}
-
+// Allow customers to log in on this page instead of redirecting immediately.
 let session = loadSession("customer");
 let orders = loadOrders();
 let chatMessages = loadChatMessages();
@@ -42,18 +38,20 @@ const chatForm = qs("chatForm");
 const chatInput = qs("chatInput");
 const chatStatus = qs("chatStatus");
 
-// Listen for auth changes
-firebase.auth().onAuthStateChanged(async (user) => {
-  if (user) {
-    // User is signed in, load their data
-    if (session) {
-      await loadOrdersFromFirestore();
-    }
+function setupFirebaseAuthObserver() {
+  if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (user && session) {
+        await loadOrdersFromFirestore();
+      }
+    });
   }
-});
+}
 
 // Initialize
 function init() {
+  setupFirebaseAuthObserver();
+
   if (!session) {
     showAuthModal();
   } else {
@@ -95,11 +93,13 @@ function syncUI() {
 
 async function loadOrdersFromFirestore() {
   try {
-    const currentUser = firebase.auth().currentUser;
-    if (currentUser) {
-      const allOrders = await getOrders();
-      // Filter to only this customer's orders
-      orders = allOrders.filter(o => o.customerId === currentUser.uid);
+    if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+      const currentUser = firebase.auth().currentUser;
+      if (currentUser) {
+        const allOrders = await getOrders();
+        // Filter to only this customer's orders
+        orders = allOrders.filter(o => o.customerId === currentUser.uid);
+      }
     }
   } catch (error) {
     console.error("Error loading orders from Firestore:", error);
@@ -118,23 +118,34 @@ authForm?.addEventListener("submit", async (e) => {
   const username = authUsername.value.trim();
   const phone = authPhone.value.trim();
   
-  if (!username || !phone) return;
-  
+  if (!username || !phone) {
+    alert("Please enter your name and phone number.");
+    return;
+  }
+
   try {
-    // Sign in with Firebase (anonymous for demo, or phone auth)
-    const userCredential = await firebase.auth().signInAnonymously();
-    const userId = userCredential.user.uid;
-    
-    // Create customer in Firestore
-    await firebase.firestore().collection("customers").doc(userId).set({
-      uid: userId,
-      username: username,
-      phone: phone,
-      verified: false,
-      createdAt: new Date()
-    }, { merge: true });
-    
-    session = { uid: userId, username, phone, joinedDate: new Date().toISOString() };
+    let userId = `local-${Date.now()}`;
+    let isFirebaseUser = false;
+
+    if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+      try {
+        const userCredential = await firebase.auth().signInAnonymously();
+        userId = userCredential.user.uid;
+        isFirebaseUser = true;
+
+        await firebase.firestore().collection("customers").doc(userId).set({
+          uid: userId,
+          username,
+          phone,
+          verified: false,
+          createdAt: new Date()
+        }, { merge: true });
+      } catch (firebaseError) {
+        console.warn("Firebase anonymous login failed, continuing with local session:", firebaseError.message);
+      }
+    }
+
+    session = { uid: userId, username, phone, joinedDate: new Date().toISOString(), isFirebaseUser };
     saveSession("customer", session);
     closeAuthModal();
     syncUI();
@@ -181,37 +192,59 @@ fuelOrderForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
   
   try {
-    const currentUser = firebase.auth().currentUser;
-    if (!currentUser) {
-      alert("Please sign in first");
-      return;
-    }
-    
     const vehicle = qs("vehicle").value.trim();
     const location = qs("location").value.trim();
+    const pincode = qs("pincode").value.trim();
     const fuelType = qs("fuelType").value;
     const quantity = Number(qs("quantity").value);
     const notes = qs("notes").value.trim();
     
-    if (!vehicle || !location || !fuelType || !quantity) return;
-    
-    // Create order in Firestore
-    const orderId = await createOrder({
-      customerId: currentUser.uid,
-      customerName: session.username,
-      customerPhone: session.phone,
+    if (!vehicle || !location || !pincode || !fuelType || !quantity) {
+      alert("Please fill in all order fields, including pincode.");
+      return;
+    }
+
+    const newOrder = {
+      id: Date.now(),
+      type: "fuel",
+      createdAt: new Date().toISOString(),
+      customerId: session?.uid || `local-${Date.now()}`,
+      customerName: session?.username || "Customer",
+      customerPhone: session?.phone || "Not provided",
       vehicle,
       location,
+      pincode,
       fuelType,
       quantity,
       notes,
-      estimatedCost: quantity * 100 + 50
-    });
-    
-    // Reload orders
-    await loadOrdersFromFirestore();
+      status: "waiting",
+      acceptedBy: null,
+      estimatedCost: quantity * 100 + 50,
+    };
+
+    orders.push(newOrder);
+    saveOrders(orders);
+
+    if (typeof createOrder === "function") {
+      try {
+        await createOrder({
+          customerUid: session?.uid || null,
+          customerName: newOrder.customerName,
+          customerPhone: newOrder.customerPhone,
+          vehicle,
+          location,
+          pincode,
+          fuelType,
+          quantity,
+          notes,
+          estimatedCost: newOrder.estimatedCost,
+        });
+      } catch (firebaseError) {
+        console.warn("Customer order saved locally; Firestore order sync failed:", firebaseError.message);
+      }
+    }
+
     renderOrders();
-    
     fuelOrderForm.reset();
     alert("✅ Fuel order placed! A driver will accept it shortly.");
   } catch (error) {
@@ -238,7 +271,8 @@ function renderOrders() {
       </div>
       <div class="order-info">
         <p><strong>📍 Location:</strong> ${order.location}</p>
-        <p><strong>🚗 Vehicle:</strong> ${order.vehicle}</p>
+        <p><strong>� Pincode:</strong> ${order.pincode || 'N/A'}</p>
+        <p><strong>�🚗 Vehicle:</strong> ${order.vehicle}</p>
         <p><strong>💰 Estimated:</strong> ₹${order.estimatedCost}</p>
         <p style="font-size: 0.8rem; color: #9ca3c7;">Placed at ${formatTime(new Date(order.createdAt))}</p>
       </div>

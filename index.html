@@ -69,6 +69,10 @@
             Location / Pin
             <input type="text" id="qrLocation" required placeholder="Share your location or PIN" />
           </label>
+          <label>
+            Pincode
+            <input type="text" id="qrPincode" required placeholder="560001" maxlength="6" />
+          </label>
           <div class="grid two">
             <label>
               Fuel type
@@ -165,7 +169,7 @@
             <li>Delivery fee based on distance</li>
             <li>No subscription required</li>
           </ul>
-          <button class="btn ghost full">Estimate my cost</button>
+          <button class="btn ghost full" id="estimateCostBtn">Estimate my cost</button>
         </div>
         <div class="price-card featured">
           <h3>Business & fleets</h3>
@@ -175,7 +179,7 @@
             <li>Dedicated account manager</li>
             <li>Consolidated invoicing</li>
           </ul>
-          <button class="btn primary full">Book a call</button>
+          <button class="btn primary full" id="bookCallBtn">Book a call</button>
         </div>
       </div>
     </section>
@@ -190,7 +194,7 @@
           </p>
           <div class="contact-actions">
             <a href="tel:+1000000000" class="btn primary">Call support</a>
-            <a href="#" class="btn ghost">Chat on WhatsApp</a>
+            <a href="https://wa.me/1000000000" class="btn ghost" id="whatsappBtn" target="_blank">Chat on WhatsApp</a>
           </div>
           <ul class="contact-list">
             <li><span>Support:</span> support@mech-go.com</li>
@@ -320,11 +324,15 @@
     <div class="modal">
       <button class="modal-close" id="authClose">&times;</button>
       <h2 id="authTitle">Login to MECH-GO</h2>
-      <p class="modal-subtitle" id="authSubtitle">Choose a simple username to continue.</p>
+      <p class="modal-subtitle" id="authSubtitle">Enter your details to continue.</p>
       <form id="authForm" class="form">
-        <label>
-          Username / Phone
-          <input type="text" id="authUsername" required placeholder="e.g. john_customer" />
+        <label id="nameFieldLabel">
+          Name
+          <input type="text" id="authName" required placeholder="Your full name" />
+        </label>
+        <label id="phoneFieldLabel">
+          Mobile number
+          <input type="tel" id="authPhone" required placeholder="+91 98765 43210" />
         </label>
         <label>
           Role
@@ -332,17 +340,18 @@
             <option value="customer">Customer</option>
             <option value="driver">Delivery Partner</option>
             <option value="mechanic">Mechanic</option>
-            <option value="admin">Admin (Password)</option>
+            <option value="admin">Admin</option>
           </select>
+        </label>
+        <label id="passwordFieldLabel" class="hidden">
+          Admin password
+          <input type="password" id="authPassword" placeholder="admin123" />
         </label>
         <button class="btn primary full" type="submit">Continue</button>
       </form>
-      <p class="form-note" id="adminNote" style="display:none; color: var(--accent-gold);">🔐 Admin access requires password verification.</p>
-      <p class="modal-note" id="adminLoginNote" style="display:none;">
-        Default password: <strong>admin123</strong>
-      </p>
+      <p class="form-note hidden" id="adminNote">🔐 Admin access requires admin credentials.</p>
       <p class="modal-note">
-        This demo stores your session and chat locally in this browser only. For a real deployment, connect to a backend.
+        This demo stores your session locally in your browser. For production, secure this with a proper backend.
       </p>
     </div>
   </div>

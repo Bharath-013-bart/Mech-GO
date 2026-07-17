@@ -21,6 +21,14 @@ function initializeFirebase() {
       return false;
     }
 
+    // Initialize Firebase app if not already initialized
+    if (!firebase.apps || firebase.apps.length === 0) {
+      firebase.initializeApp(firebaseConfig);
+      console.log("🔧 Firebase app created");
+    } else {
+      console.log("🔧 Firebase app already initialized");
+    }
+
     auth = firebase.auth();
     db = firebase.firestore();
     storage = firebase.storage();

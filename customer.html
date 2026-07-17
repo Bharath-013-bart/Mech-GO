@@ -64,6 +64,10 @@
               <input type="text" id="location" required placeholder="Drop a pin or address" />
             </label>
           </div>
+          <label>
+            Pincode
+            <input type="text" id="pincode" required placeholder="560001" maxlength="6" />
+          </label>
 
           <div class="form-row">
             <label>
@@ -144,7 +148,7 @@
   </main>
 
   <!-- Auth Modal -->
-  <div class="modal-backdrop" id="authModal">
+  <div class="modal-backdrop hidden" id="authModal">
     <div class="modal">
       <button class="modal-close" id="authClose">&times;</button>
       <h2>Login to MECH-GO</h2>
